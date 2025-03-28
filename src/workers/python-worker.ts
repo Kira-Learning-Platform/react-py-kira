@@ -1,26 +1,10 @@
+import { PyodideWorker } from '../types/worker'
+
 const CDN_URL = 'https://assets.kira-learning.com/3rdParty/pyodide/pyodide'
 
 importScripts(`${CDN_URL}/pyodide.js`)
 
-interface Pyodide {
-  loadPackage: (packages: string[]) => Promise<void>
-  pyimport: (pkg: string) => micropip
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  runPythonAsync: (code: string, namespace?: any) => Promise<void>
-  version: string
-  FS: {
-    readFile: (name: string, options: unknown) => void
-    writeFile: (name: string, data: string, options: unknown) => void
-    mkdir: (name: string) => void
-    rmdir: (name: string) => void
-    unlink: (name: string) => void
-  }
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  globals: any
-  isPyProxy: (value: unknown) => boolean
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  registerJsModule: any
-}
+type Pyodide = PyodideWorker<micropip>
 
 interface micropip {
   install: (packages: string[]) => Promise<void>
@@ -43,9 +27,9 @@ declare global {
 // Monkey patch console.log to prevent the script from outputting logs
 if (self.location.hostname !== 'localhost') {
   // eslint-disable-next-line @typescript-eslint/no-empty-function
-  console.log = () => {}
+  console.log = () => { }
   // eslint-disable-next-line @typescript-eslint/no-empty-function
-  console.error = () => {}
+  console.error = () => { }
 }
 
 import { expose } from 'comlink'
@@ -76,13 +60,18 @@ const python = {
     setReturnValue: (returnResult: ReturnResult | undefined) => void,
     packages: string[][]
   ) {
+    const decoder = new TextDecoder()
     self.setReturnValue = setReturnValue
     self.outputLength = 0
     self.returnResult = undefined
-    self.pyodide = await self.loadPyodide({
-      stdout: (str: string) => {
-        self.outputLength += 1
-        stdout(str)
+    self.pyodide = await self.loadPyodide({})
+
+    self.pyodide.setStdout({
+      isatty: false,
+      write: (buf: Uint8Array) => {
+        stdout?.(decoder.decode(buf))
+        self.outputLength++
+        return buf.byteLength
       }
     })
     await self.pyodide.loadPackage(['pyodide-http', `${CDN_URL}/zipp-3.20.2-py3-none-any.whl`, `${CDN_URL}/importlib_metadata-8.5.0-py3-none-any.whl`, `${CDN_URL}/importlib_resources-6.4.5-py3-none-any.whl`])
@@ -91,7 +80,7 @@ const python = {
     }
     await self.pyodide.loadPackage(['micropip'])
     const micropip = self.pyodide.pyimport('micropip')
-    await micropip.install(['matplotlib', 'beautifulsoup4', 'pandas', 'numpy', 'setuptools']);
+    await micropip.install(['matplotlib', 'beautifulsoup4', 'pandas', 'numpy', 'setuptools'])
     if (packages[1].length > 0) {
       await micropip.install(packages[1])
     }
@@ -130,20 +119,20 @@ sys.stdin.readline = lambda: react_py.getInput("${id}", __prompt_str__)
     self.outputLength = 0
     self.setReturnValue(undefined)
     await self.pyodide
-    .runPythonAsync(code)
-    .then((output) => {
-      self.setReturnValue({
-        outputLength: self.outputLength,
-        returnValue: output
+      .runPythonAsync(code)
+      .then((output) => {
+        self.setReturnValue({
+          outputLength: self.outputLength,
+          returnValue: output
+        })
       })
-    })
-    .catch((e) => {
-      self.setReturnValue({
-        outputLength: self.outputLength,
-        returnValue: undefined
+      .catch((e) => {
+        self.setReturnValue({
+          outputLength: self.outputLength,
+          returnValue: undefined
+        })
+        throw e
       })
-      throw e
-    })
   },
   readFile(name: string) {
     return self.pyodide.FS.readFile(name, { encoding: 'utf8' })

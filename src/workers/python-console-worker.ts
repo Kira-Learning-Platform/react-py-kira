@@ -1,24 +1,7 @@
+import { PyodideWorker } from '../types/worker'
 importScripts("https://assets.kira-learning.com/3rdParty/pyodide/pyodide/pyodide.js")
 
-interface Pyodide {
-  loadPackage: (packages: string[]) => Promise<void>
-  pyimport: (pkg: string) => micropip
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  runPythonAsync: (code: string, namespace?: any) => Promise<void>
-  version: string
-  FS: {
-    readFile: (name: string, options: unknown) => void
-    writeFile: (name: string, data: string, options: unknown) => void
-    mkdir: (name: string) => void
-    rmdir: (name: string) => void
-    unlink: (name: string) => void
-  }
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  globals: any
-  isPyProxy: (value: unknown) => boolean
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  registerJsModule: any
-}
+type Pyodide = PyodideWorker<micropip>
 
 interface micropip {
   install: (packages: string[]) => Promise<void>
@@ -38,9 +21,9 @@ declare global {
 // Monkey patch console.log to prevent the script from outputting logs
 if (self.location.hostname !== 'localhost') {
   // eslint-disable-next-line @typescript-eslint/no-empty-function
-  console.log = () => {}
+  console.log = () => { }
   // eslint-disable-next-line @typescript-eslint/no-empty-function
-  console.error = () => {}
+  console.error = () => { }
 }
 
 import { expose } from 'comlink'
@@ -79,7 +62,16 @@ const python = {
     }) => void,
     packages: string[][]
   ) {
+    const decoder = new TextDecoder()
     self.pyodide = await self.loadPyodide({})
+    self.pyodide.setStdout({
+      write: (buffer: Uint8Array) => {
+        stdout(decoder.decode(buffer))
+        return buffer.byteLength
+      },
+      isatty: false,
+    })
+
     await self.pyodide.loadPackage(['pyodide-http'])
     if (packages[0].length > 0) {
       await self.pyodide.loadPackage(packages[0])
@@ -137,9 +129,6 @@ sys.stdin.readline = lambda: react_py.getInput("${id}", __prompt_str__)
     const pyconsole = namespace.get('pyconsole')
     const clearConsole = namespace.get('clear_console')
     namespace.destroy()
-
-    // eslint-disable-next-line camelcase
-    pyconsole.stdout_callback = stdout
 
     pythonConsole = {
       reprShorten,
