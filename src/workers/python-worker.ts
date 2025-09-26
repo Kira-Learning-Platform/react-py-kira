@@ -37,11 +37,19 @@ import { ReturnResult } from '../hooks/usePython'
 
 const reactPyModule = {
   getInput: (id: string, prompt: string) => {
-    const request = new XMLHttpRequest()
-    // Synchronous request to be intercepted by service worker
-    request.open('GET', `/react-py-get-input/?id=${id}&prompt=${encodeURIComponent(prompt)}`, false)
-    request.send(null)
-    return request.responseText
+    try {
+      const request = new XMLHttpRequest()
+    
+      const baseUrl = self.location.origin;
+      const url = `${baseUrl}/react-py-get-input/?id=${id}&prompt=${encodeURIComponent(prompt)}`
+      // Synchronous request to be intercepted by service worker
+      request.open('GET', url, false)
+      request.send(null)
+      return request.responseText
+    } catch (error) {
+      console.error('Exception in getInput:', error);
+      throw error;
+    }
   }
 }
 
